@@ -1,21 +1,41 @@
+
+import os
+from dotenv import load_dotenv
 from web3 import Web3
 
-# Connect to Ganache
-w3 = Web3(Web3.HTTPProvider('http://127.0.0.1:7545'))
+load_dotenv()
 
-# Your exact contract address from the deployment step
-CONTRACT_ADDRESS = '0x65AB8e999b0acC1381B7aE4FDb5525195Af463A9'
+# Blockchain configuration
+RPC_URL = os.getenv("SEPOLIA_RPC_URL")
+PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY")
+CONTRACT_ADDRESS = os.getenv("CONTRACT_ADDRESS")
 
-# The ABI acts as the "menu" telling Python what functions the contract has
+w3 = Web3(Web3.HTTPProvider(RPC_URL))
+
+if not w3.is_connected():
+    raise RuntimeError("Unable to connect to Sepolia.")
+
+if w3.eth.chain_id != 11155111:
+    raise RuntimeError("Incorrect blockchain network.")
+
+account = w3.eth.account.from_key(PRIVATE_KEY)
+
+# Smart contract ABI
 CONTRACT_ABI = [
     {
-        "inputs": [{"name": "_hash", "type": "string"}, {"name": "_caseID", "type": "string"}],
+        "inputs": [
+            {"name": "_hash", "type": "string"},
+            {"name": "_caseID", "type": "string"}
+        ],
         "name": "storeEvidence",
         "outputs": [],
+        "stateMutability": "nonpayable",
         "type": "function"
     },
     {
-        "inputs": [{"name": "index", "type": "uint256"}],
+        "inputs": [
+            {"name": "index", "type": "uint256"}
+        ],
         "name": "getEvidence",
         "outputs": [
             {"name": "", "type": "string"},
@@ -28,40 +48,114 @@ CONTRACT_ABI = [
     {
         "inputs": [],
         "name": "getCount",
-        "outputs": [{"name": "", "type": "uint256"}],
+        "outputs": [
+            {"name": "", "type": "uint256"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "owner",
+        "outputs": [
+            {"name": "", "type": "address"}
+        ],
         "stateMutability": "view",
         "type": "function"
     }
 ]
 
-contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
-w3.eth.default_account = w3.eth.accounts[0]
+contract = w3.eth.contract(
+    address=Web3.to_checksum_address(CONTRACT_ADDRESS),
+    abi=CONTRACT_ABI
+)
 
+
+# Register evidence on blockchain
 def store_on_blockchain(evidence_hash, case_id):
-    """Saves the SHA-256 hash to the Ganache blockchain"""
-    tx = contract.functions.storeEvidence(evidence_hash, case_id).transact()
-    w3.eth.wait_for_transaction_receipt(tx)
+
+    if contract.functions.owner().call().lower() != account.address.lower():
+        raise RuntimeError("Unauthorized blockchain wallet.")
+
+    if len(evidence_hash) != 64:
+        raise ValueError("Invalid SHA-256 hash.")
+
+    int(evidence_hash, 16)
+
+    function = contract.functions.storeEvidence(
+        evidence_hash.lower(), case_id
+    )
+
+    gas_estimate = function.estimate_gas({
+        "from": account.address
+    })
+
+    transaction = function.build_transaction({
+        "from": account.address,
+        "chainId": 11155111,
+        "nonce": w3.eth.get_transaction_count(
+            account.address, "pending"
+        ),
+        "gas": int(gas_estimate * 1.2),
+        "gasPrice": w3.eth.gas_price
+    })
+
+    signed_tx = account.sign_transaction(transaction)
+
+    raw_tx = getattr(signed_tx, "raw_transaction", None)
+
+    if raw_tx is None:
+        raw_tx = signed_tx.rawTransaction
+
+    tx_hash = w3.eth.send_raw_transaction(raw_tx)
+
+    print("Transaction Hash:", w3.to_hex(tx_hash))
+
+    receipt = w3.eth.wait_for_transaction_receipt(
+        tx_hash, timeout=300
+    )
+
+    if receipt.status != 1:
+        raise RuntimeError("Blockchain transaction failed.")
+
     return True
 
+
+# Retrieve all blockchain evidence records
 def get_all_evidence():
-    """Retrieves all stored evidence records"""
+
     count = contract.functions.getCount().call()
+
     all_evidence = []
+
     for i in range(count):
-        hash_val, case_id, timestamp = contract.functions.getEvidence(i).call()
+
+        hash_val, case_id, timestamp = (
+            contract.functions.getEvidence(i).call()
+        )
+
         all_evidence.append({
             "index": i,
             "hash": hash_val,
             "case_id": case_id,
             "timestamp": timestamp
         })
+
     return all_evidence
 
+
+# Verify evidence integrity
 def verify_hash(input_hash):
-    """Queries the blockchain to verify if a hash exists"""
+
     count = contract.functions.getCount().call()
+
     for i in range(count):
-        stored_hash, case_id, timestamp = contract.functions.getEvidence(i).call()
-        if stored_hash == input_hash:
+
+        stored_hash, case_id, timestamp = (
+            contract.functions.getEvidence(i).call()
+        )
+
+        if stored_hash.lower() == input_hash.lower():
             return True, case_id
+
     return False, None
