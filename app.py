@@ -222,7 +222,7 @@ div.stButton > button[kind="secondary"]:hover {
 PAGES = [
     "Dashboard",
     "Victim Reports",
-    "Case Management",
+    ##"Case Management",
     "Collect Evidence",
     "Evidence Records",
     "Verify Evidence",

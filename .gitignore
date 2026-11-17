@@ -1,15 +1,15 @@
-
-# Python virtual environment
 venv/
-.venv/
 __pycache__/
 *.pyc
 
-# Telegram authentication and private data
+.env
+.env.*
+!.env.example
+
 *.session
 *.session-journal
-*.session*
-*.env
-.env.*
 local_vault/
 
+*~
+scraper_backup.py
+.streamlit/secrets.toml
