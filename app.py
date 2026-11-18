@@ -1,6 +1,7 @@
 import os
 import re
 import hashlib
+from evidence_reader import read_evidence
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urlparse
@@ -607,7 +608,7 @@ else:
                                 "No uploaded evidence linked to this report."
                             )
                         for evidence in evidence_list:
-                            file_path = Path(evidence["file_path"])
+                            file_path = evidence["file_path"]
                             # Temporary identification of locally generated test captures.
                             # Filename-based detection is not forensic provenance.
                             # Test captures are generated under local_vault/test_captures,
@@ -635,10 +636,11 @@ else:
                                 "**Received At:**",
                                 evidence["captured_at"]
                             )
-                            if not file_path.is_file():
-                                st.error("Preserved evidence file is missing.")
+                            try:
+                                file_bytes = read_evidence(file_path)
+                            except Exception:
+                                st.error("Unable to retrieve preserved evidence.")
                                 continue
-                            file_bytes = file_path.read_bytes()
                             current_hash = hashlib.sha256(
                                 file_bytes
                             ).hexdigest()
@@ -649,7 +651,7 @@ else:
                                 )
                                 continue
                             st.success(
-                                "Local evidence integrity check passed."
+                                "Evidence SHA-256 integrity check passed."
                             )
                             # Blockchain registration is restricted to investigators
                             # by the role routing above. Do not register synthetic
@@ -708,7 +710,7 @@ else:
                                     st.error("Unable to verify or register blockchain evidence.")
                                     with st.expander("Blockchain technical details"):
                                         st.text(str(blockchain_error))
-                            if file_path.suffix.lower() in [
+                            if Path(evidence["original_filename"]).suffix.lower() in [
                                 ".png", ".jpg", ".jpeg"
                             ]:
                                 st.image(

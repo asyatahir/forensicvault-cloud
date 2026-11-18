@@ -4,13 +4,24 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from cloud_storage import upload_evidence
+
 EVIDENCE_FOLDER = Path("local_vault") / "victim_uploads"
 
 ALLOWED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".pdf", ".txt"
 }
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_FILE_SIZE = 10 * 1024 * 1024
+
+CONTENT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".html": "text/html"
+}
 
 
 def save_victim_evidence(uploaded_file):
@@ -31,21 +42,20 @@ def save_victim_evidence(uploaded_file):
     if not file_bytes:
         raise ValueError("Uploaded file is empty.")
 
-    EVIDENCE_FOLDER.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
     file_id = uuid.uuid4().hex
-    filename = f"{file_id}{extension}"
-    file_path = EVIDENCE_FOLDER / filename
+
+    object_path = f"victim_uploads/{file_id}{extension}"
 
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
-    file_path.write_bytes(file_bytes)
+    upload_evidence(
+        file_bytes,
+        object_path,
+        CONTENT_TYPES[extension]
+    )
 
     return {
-        "file_path": str(file_path),
+        "file_path": f"supabase://{object_path}",
         "sha256": file_hash,
         "captured_at": datetime.now(
             timezone.utc
@@ -53,16 +63,22 @@ def save_victim_evidence(uploaded_file):
         "original_filename": Path(uploaded_file.name).name
     }
 
+
 def save_captured_evidence(source_path):
+
     source_path = Path(source_path)
 
     if not source_path.is_file():
-        raise FileNotFoundError("Captured evidence file not found.")
+        raise FileNotFoundError(
+            "Captured evidence file not found."
+        )
 
     extension = source_path.suffix.lower()
 
     if extension not in {".png", ".html"}:
-        raise ValueError("Unsupported captured evidence type.")
+        raise ValueError(
+            "Unsupported captured evidence type."
+        )
 
     file_bytes = source_path.read_bytes()
 
@@ -72,16 +88,23 @@ def save_captured_evidence(source_path):
     if len(file_bytes) > MAX_FILE_SIZE:
         raise ValueError("Captured evidence exceeds 10 MB.")
 
-    EVIDENCE_FOLDER.mkdir(parents=True, exist_ok=True)
+    file_id = uuid.uuid4().hex
 
-    filename = f"{uuid.uuid4().hex}{extension}"
-    destination = EVIDENCE_FOLDER / filename
+    object_path = f"captured_evidence/{file_id}{extension}"
 
-    destination.write_bytes(file_bytes)
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+    upload_evidence(
+        file_bytes,
+        object_path,
+        CONTENT_TYPES[extension]
+    )
 
     return {
-        "file_path": str(destination),
-        "sha256": hashlib.sha256(file_bytes).hexdigest(),
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "file_path": f"supabase://{object_path}",
+        "sha256": file_hash,
+        "captured_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
         "original_filename": source_path.name
     }
