@@ -255,7 +255,8 @@ def readable_date(timestamp):
 from url_validator import (
     valid_case_id,
     normalize_carousell_url,
-    normalize_telegram_target
+    normalize_telegram_target,
+    normalize_souq_url,
 )
 
 def page_heading(title, description):
@@ -704,9 +705,9 @@ elif current_user['role'] == 'investigator':
             )
 
             available_platforms = (
-                ["Carousell", "Telegram"]
+                ["Carousell", "Telegram", "IIUM Souq"]
                 if browser_enabled
-                else ["Telegram"]
+                else ["Telegram","IIUM Souq"]
             )
 
             if not browser_enabled:
@@ -762,6 +763,8 @@ elif current_user['role'] == 'investigator':
                     try:
                         if platform == "Carousell":
                             target = normalize_carousell_url(target)
+                        elif platform == "IIUM Souq":
+                            target = normalize_souq_url(target)
                         else:
                             target = normalize_telegram_target(target)
                         from collection_security import (
@@ -800,6 +803,9 @@ elif current_user['role'] == 'investigator':
                                         )
                                     finally:
                                         driver.quit()
+                                elif platform == "IIUM Souq":
+                                        from souq_scraper import extract_souq_evidence
+                                        evidence = extract_souq_evidence(target, case_id)
                                 else:
                                     import os
 

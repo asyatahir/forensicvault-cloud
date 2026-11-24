@@ -20,12 +20,10 @@ def validate_carousell_url(url):
 
         hostname = (parsed.hostname or "").lower().rstrip(".")
 
-        allowed_domains = {
-            "carousell.sg",
-            "www.carousell.sg",
-            "carousell.com.my",
-            "www.carousell.com.my",
-        }
+        allowed_domains = (
+        "souq.iium.edu.my",
+        "www.souq.iium.edu.my",
+    )
 
         if hostname not in allowed_domains:
             return False
