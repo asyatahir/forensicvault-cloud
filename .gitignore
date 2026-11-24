@@ -1,0 +1,41 @@
+venv/
+__pycache__/
+*.pyc
+
+.env
+.env.*
+!.env.example
+
+*.session
+*.session-journal
+local_vault/
+
+*~
+scraper_backup.py
+.streamlit/secrets.toml
+# Local development backups
+*.bak
+
+# Temporary testing scripts
+/test_auto_evidence.py
+/test_blockchain.py
+/test_cloud_storage.py
+/test_sepolia.py
+/test_supabase.py
+
+# Temporary test evidence
+/test_evidence.txt
+/tampered_evidence.txt
+
+# Local draft documentation
+/README.txt
+
+# Sensitive credentials and local storage
+.env
+.env.*
+.streamlit/secrets.toml
+*.session
+*.session-journal
+local_vault/
+venv/
+__pycache__/
