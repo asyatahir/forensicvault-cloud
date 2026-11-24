@@ -20,7 +20,8 @@ CONTENT_TYPES = {
     ".jpeg": "image/jpeg",
     ".pdf": "application/pdf",
     ".txt": "text/plain",
-    ".html": "text/html"
+    ".html": "text/html",
+    ".json": "application/json"
 }
 
 
@@ -76,7 +77,7 @@ def save_captured_evidence(source_path):
 
     extension = source_path.suffix.lower()
 
-    if extension not in {".png", ".html", ".txt"}:
+    if extension not in {".png", ".html", ".txt", ".json"}:
         raise ValueError(
             "Unsupported captured evidence type."
         )

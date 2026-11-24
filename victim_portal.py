@@ -52,9 +52,20 @@ def render_victim_portal(user):
                 "Describe What Happened"
             )
 
-            evidence_file = st.file_uploader(
+            evidence_files = st.file_uploader(
                 "Supporting Evidence",
-                type=["png", "jpg", "jpeg", "pdf", "txt"]
+                type=["png", "jpg", "jpeg", "pdf", "txt"],
+                accept_multiple_files=True,
+                help="Upload multiple files. Combined maximum: 10 MB."
+            )
+
+            total_size = sum(
+                file.size for file in evidence_files
+            )
+
+            st.caption(
+                f"Total evidence size: "
+                f"{total_size / (1024 * 1024):.2f} / 10 MB"
             )
 
             consent = st.checkbox(
@@ -83,11 +94,13 @@ def render_victim_portal(user):
                     "Please enter a valid HTTPS Carousell listing URL."
                 )
 
-            elif (
-                evidence_file is not None
-                and evidence_file.size > 10 * 1024 * 1024
-            ):
-                st.error("Evidence file must be 10 MB or smaller.")
+            elif total_size > 10 * 1024 * 1024:
+                st.error(
+                    "Combined evidence size must not exceed 10 MB."
+                )
+
+            elif any(file.size == 0 for file in evidence_files):
+                st.error("Please remove empty evidence files.")
 
             else:
 
@@ -105,26 +118,39 @@ def render_victim_portal(user):
                         f"Report REPORT-{report_id:04d} submitted."
                     )
 
-                    if evidence_file is not None:
+                    if evidence_files:
+                        successful_uploads = 0
+                        failed_uploads = []
 
-                        try:
-                            data = save_victim_evidence(
-                                evidence_file
-                            )
+                        for evidence_file in evidence_files:
+                            try:
+                                data = save_victim_evidence(
+                                    evidence_file
+                                )
 
-                            save_report_evidence(
-                                report_id, data
-                            )
+                                save_report_evidence(
+                                    report_id, data
+                                )
 
+                                successful_uploads += 1
+
+                            except Exception:
+                                failed_uploads.append(
+                                    evidence_file.name
+                                )
+
+                        if successful_uploads:
                             st.success(
-                                "Evidence securely uploaded to cloud "
-                                "storage with SHA-256 hash."
+                                f"{successful_uploads} evidence "
+                                "file(s) successfully uploaded "
+                                "with individual SHA-256 hashes."
                             )
 
-                        except Exception:
+                        if failed_uploads:
                             st.warning(
-                                "Report saved, but evidence could "
-                                "not be uploaded or linked."
+                                "Report saved, but the following "
+                                "files could not be uploaded or linked: "
+                                + ", ".join(failed_uploads)
                             )
 
                 except Exception:

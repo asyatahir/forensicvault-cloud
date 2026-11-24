@@ -764,34 +764,71 @@ elif current_user['role'] == 'investigator':
                             target = normalize_carousell_url(target)
                         else:
                             target = normalize_telegram_target(target)
-                        with st.spinner(
-                            "Collecting and preserving evidence..."
-                        ):
-                            if platform == "Carousell":
-                                driver = setup_driver()
-                                try:
-                                    evidence = extract_evidence(
-                                        driver,
-                                        target,
-                                        case_id,
-                                    )
-                                finally:
-                                    driver.quit()
-                            else:
-                                from telegram_scraper import (
-                                    extract_telegram_evidence,
-                                )
-                                evidence = extract_telegram_evidence(
-                                    target,
-                                    case_id,
-                                )
-                            from evidence_preservation import (
-                                preserve_collected_evidence
-                            )
+                        from collection_security import (
+                            allow_collection_attempt,
+                            collection_lock,
+                        )
 
-                            results = preserve_collected_evidence(
-                                evidence, platform
+                        if not allow_collection_attempt(
+                            current_user["id"]
+                        ):
+                            st.warning(
+                                "Collection limit reached or access denied. "
+                                "Please wait five minutes before retrying."
                             )
+                            st.stop()
+
+                        with collection_lock() as acquired:
+
+                            if not acquired:
+                                st.warning(
+                                    "Another evidence collection is running. "
+                                    "Please try again shortly."
+                                )
+                                st.stop()
+
+                            with st.spinner(
+                                "Collecting and preserving evidence..."
+                            ):
+                                if platform == "Carousell":
+                                    driver = setup_driver()
+                                    try:
+                                        evidence = extract_evidence(
+                                            driver,
+                                            target,
+                                            case_id,
+                                        )
+                                    finally:
+                                        driver.quit()
+                                else:
+                                    import os
+
+                                    if os.getenv(
+                                        "ENABLE_TELEGRAM_API",
+                                        "false"
+                                    ).lower() == "true":
+                                        from telegram_api_collector import (
+                                            extract_telegram_api_evidence,
+                                        )
+                                        evidence = extract_telegram_api_evidence(
+                                            target,
+                                            case_id,
+                                        )
+                                    else:
+                                        from telegram_scraper import (
+                                            extract_telegram_evidence,
+                                        )
+                                        evidence = extract_telegram_evidence(
+                                            target,
+                                            case_id,
+                                        )
+                                from evidence_preservation import (
+                                    preserve_collected_evidence
+                                )
+
+                                results = preserve_collected_evidence(
+                                    evidence, platform
+                                )
 
                         if all(
                             item["blockchain_status"] == "Registered"
@@ -869,14 +906,12 @@ elif current_user['role'] == 'investigator':
         )
         if not blockchain_ready():
             st.warning(
-                "Ganache or the deployed contract is unavailable."
+                "Sepolia or the deployed contract is unavailable."
             )
         else:
             records, error = load_records()
             if error:
                 st.error("Unable to retrieve case records.")
-                with st.expander("Technical details"):
-                    st.text(error)
             elif not records:
                 st.info(
                     "No cases found. Collect evidence to create your first case."
@@ -920,13 +955,23 @@ elif current_user['role'] == 'investigator':
         from cloud_evidence_viewer import show_cloud_evidence
 
         cloud_tab, blockchain_tab = st.tabs(
-            ["Cloud Evidence", "Blockchain Records"]
+            ["Stored Evidence", "Blockchain Registry"]
         )
 
         with cloud_tab:
+            st.info(
+                "View, retrieve and download original evidence "
+                "files preserved in secure cloud storage."
+            )
             show_cloud_evidence()
 
         with blockchain_tab:
+            st.info(
+                "View registered SHA-256 hashes, case IDs and "
+                "blockchain timestamps used for evidence integrity "
+                "verification. Original files are not stored "
+                "on the blockchain."
+            )
             if not blockchain_ready():
                 st.warning(
                     "Sepolia or the deployed contract is unavailable."
@@ -937,8 +982,6 @@ elif current_user['role'] == 'investigator':
                     st.error(
                         "Unable to retrieve blockchain records."
                     )
-                    with st.expander("Technical details"):
-                        st.text(error)
                 elif not records:
                     st.info("No evidence records found.")
                 else:
@@ -999,7 +1042,7 @@ elif current_user['role'] == 'investigator':
         )
         uploaded_file = st.file_uploader(
             "Upload Evidence File",
-            type=["png", "html", "txt"],
+            type=["png", "jpg", "jpeg", "pdf", "html", "txt", "json"],
         )
         if uploaded_file is not None:
             current_hash = hashlib.sha256(

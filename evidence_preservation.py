@@ -15,10 +15,20 @@ def preserve_collected_evidence(evidence, platform):
 
     results = []
 
-    artifact_paths = [
-        evidence["screenshot_path"],
-        evidence["html_path"]
-    ]
+    artifact_paths = evidence.get("artifact_paths")
+
+    if artifact_paths is None:
+        artifact_paths = [
+            evidence[key]
+            for key in ("screenshot_path", "html_path")
+            if evidence.get(key)
+        ]
+
+    if not isinstance(artifact_paths, (list, tuple)):
+        raise ValueError("Invalid evidence artifact list.")
+
+    if not artifact_paths:
+        raise ValueError("No evidence artifacts available.")
 
     captured_at = evidence["extraction_date"]
 

@@ -92,12 +92,62 @@ def create_user(
         ) from None
 
 
+
+def _allow_login_attempt(identifier, role):
+
+    normalized = identifier.strip().lower()
+
+    attempt_key = hashlib.sha256(
+        f"{role}:{normalized}".encode()
+    ).hexdigest()
+
+    with closing(get_connection()) as conn:
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO public.login_attempts (
+                        attempt_key,
+                        attempt_count,
+                        window_started_at,
+                        updated_at
+                    )
+                    VALUES (%s, 1, NOW(), NOW())
+
+                    ON CONFLICT (attempt_key)
+                    DO UPDATE SET
+                        attempt_count = CASE
+                            WHEN login_attempts.window_started_at
+                                <= NOW() - INTERVAL '5 minutes'
+                            THEN 1
+                            ELSE LEAST(
+                                login_attempts.attempt_count + 1, 6
+                            )
+                        END,
+
+                        window_started_at = CASE
+                            WHEN login_attempts.window_started_at
+                                <= NOW() - INTERVAL '5 minutes'
+                            THEN NOW()
+                            ELSE login_attempts.window_started_at
+                        END,
+
+                        updated_at = NOW()
+
+                    RETURNING attempt_count
+                """, (attempt_key,))
+
+                return cursor.fetchone()['attempt_count'] <= 5
+
+
 def authenticate(identifier, password, role='victim'):
 
     if role not in ('victim', 'investigator'):
         return None
 
     if len(identifier) > 254 or len(password) > 128:
+        return None
+
+    if not _allow_login_attempt(identifier, role):
         return None
 
     with closing(get_connection()) as conn:

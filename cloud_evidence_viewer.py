@@ -175,6 +175,23 @@ def show_cloud_evidence():
                                     key=f"preview_{evidence_id}"
                                 )
 
+                            elif filename.lower().endswith(".json"):
+                                import json
+
+                                try:
+                                    json_data = json.loads(
+                                        file_bytes.decode("utf-8")
+                                    )
+
+                                    st.write("Structured Evidence Preview")
+                                    st.json(json_data, expanded=False)
+
+                                except (ValueError, UnicodeError):
+                                    st.warning(
+                                        "JSON preview unavailable. "
+                                        "The original file can still be downloaded."
+                                    )
+
                             st.download_button(
                                 "Download Original Evidence",
                                 data=file_bytes,
