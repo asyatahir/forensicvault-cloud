@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cloud_storage import upload_evidence
+from cloud_storage import upload_evidence, download_evidence
 
 EVIDENCE_FOLDER = Path("local_vault") / "victim_uploads"
 
@@ -64,6 +64,7 @@ def save_victim_evidence(uploaded_file):
     }
 
 
+
 def save_captured_evidence(source_path):
 
     source_path = Path(source_path)
@@ -75,7 +76,7 @@ def save_captured_evidence(source_path):
 
     extension = source_path.suffix.lower()
 
-    if extension not in {".png", ".html"}:
+    if extension not in {".png", ".html", ".txt"}:
         raise ValueError(
             "Unsupported captured evidence type."
         )
@@ -99,6 +100,18 @@ def save_captured_evidence(source_path):
         object_path,
         CONTENT_TYPES[extension]
     )
+
+    # Verify evidence integrity after cloud upload
+    downloaded_bytes = download_evidence(object_path)
+
+    downloaded_hash = hashlib.sha256(
+        downloaded_bytes
+    ).hexdigest()
+
+    if downloaded_hash != file_hash:
+        raise RuntimeError(
+            "Cloud evidence integrity verification failed."
+        )
 
     return {
         "file_path": f"supabase://{object_path}",

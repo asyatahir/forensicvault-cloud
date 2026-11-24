@@ -118,7 +118,7 @@ def store_on_blockchain(evidence_hash, case_id):
     if receipt.status != 1:
         raise RuntimeError("Blockchain transaction failed.")
 
-    return True
+    return w3.to_hex(tx_hash)
 
 
 # Retrieve all blockchain evidence records

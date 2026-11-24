@@ -244,7 +244,7 @@ def load_records():
     try:
         return get_all_evidence(), None
     except Exception as exc:
-        return [], str(exc)
+        return [], "Unable to retrieve blockchain records."
 def readable_date(timestamp):
     try:
         return datetime.fromtimestamp(
@@ -252,72 +252,12 @@ def readable_date(timestamp):
         ).strftime("%d %b %Y, %I:%M %p")
     except (ValueError, TypeError, OverflowError, OSError):
         return "Unknown date"
-def valid_case_id(case_id):
-    return bool(
-        re.fullmatch(
-            r"[A-Za-z0-9_-]{1,50}",
-            case_id
-        )
-    )
-def normalize_carousell_url(value):
-    value = value.strip()
-    if not value.startswith(("https://", "http://")):
-        value = "https://" + value
-    parsed = urlparse(value)
-    host = (parsed.hostname or "").lower()
-    allowed_domains = (
-        "carousell.com",
-        "carousell.com.my",
-        "carousell.sg",
-        "carousell.ph",
-        "carousell.hk",
-        "carousell.tw",
-        "carousell.id",
-    )
-    allowed = any(
-        host == domain or host.endswith("." + domain)
-        for domain in allowed_domains
-    )
-    if (
-        parsed.scheme != "https"
-        or not allowed
-        or parsed.username is not None
-        or parsed.password is not None
-    ):
-        raise ValueError(
-            "Please enter a valid HTTPS Carousell URL."
-        )
-    try:
-        if parsed.port not in (None, 443):
-            raise ValueError("Unexpected URL port.")
-    except ValueError:
-        raise ValueError("Invalid Carousell URL port.")
-    return value
-def normalize_telegram_target(value):
-    value = value.strip()
-    if value.startswith("@"):
-        value = value[1:]
-    if value.startswith(("https://", "http://")):
-        parsed = urlparse(value)
-        if (
-            parsed.scheme != "https"
-            or (parsed.hostname or "").lower()
-            not in ("t.me", "www.t.me")
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError(
-                "Use a public Telegram channel link."
-            )
-        value = parsed.path.strip("/")
-    if not re.fullmatch(
-        r"[A-Za-z0-9_]{5,32}",
-        value
-    ):
-        raise ValueError(
-            "Enter a valid public Telegram channel username."
-        )
-    return value
+from url_validator import (
+    valid_case_id,
+    normalize_carousell_url,
+    normalize_telegram_target
+)
+
 def page_heading(title, description):
     st.title(title)
     st.caption(description)
@@ -386,7 +326,7 @@ if current_user is None:
                     create_user(name, email, password)
                     st.success('Victim account created. You can log in now.')
                 except ValueError as exc:
-                    st.error(str(exc))
+                    st.error("Registration unsuccessful. Please check your details.")
     st.stop()
 with st.sidebar:
     st.caption(f"Signed in: {current_user['name']} ({current_user['role']})")
@@ -394,9 +334,14 @@ with st.sidebar:
         st.session_state.auth_user_id = None
         st.session_state.current_page = 'Dashboard'
         st.rerun()
+if current_user['role'] not in ('victim', 'investigator'):
+    st.session_state.auth_user_id = None
+    st.error("Unauthorized account role.")
+    st.stop()
+
 if current_user['role'] == 'victim':
     render_victim_portal(current_user)
-else:
+elif current_user['role'] == 'investigator':
     # ==================================================
     # SIDEBAR
     # ==================================================
@@ -726,8 +671,6 @@ else:
                             )
         except Exception as exc:
             st.error("Unable to load victim reports.")
-            with st.expander("Technical details"):
-                st.text(str(exc))
     # ==================================================
     # COLLECT EVIDENCE
     # ==================================================
@@ -736,124 +679,186 @@ else:
             "Collect Evidence",
             "Capture digital evidence from supported platforms.",
         )
-        st.markdown(
-            '<div class="fv-section-label">NEW COLLECTION</div>',
-            unsafe_allow_html=True,
+        from manual_evidence_viewer import show_manual_upload
+
+        collection_method = st.radio(
+            "Collection Method",
+            ["Automatic Collection", "Manual Upload"],
+            horizontal=True
         )
-        platform = st.selectbox(
-            "Evidence Source",
-            ["Carousell", "Telegram"],
-        )
-        with st.form("collection_form"):
-            case_id = st.text_input(
-                "Case ID",
-                placeholder="CASE-2026-001",
+
+        if collection_method == "Manual Upload":
+            show_manual_upload()
+
+        else:
+            st.markdown(
+                '<div class="fv-section-label">NEW COLLECTION</div>',
+                unsafe_allow_html=True,
             )
-            target = st.text_input(
-                "Target URL or Channel",
-                placeholder=(
-                    "https://www.carousell.com.my/..."
-                    if platform == "Carousell"
-                    else "https://t.me/channelname"
-                ),
+            import os
+
+            browser_enabled = (
+                os.getenv(
+                    "ENABLE_BROWSER_COLLECTION", "false"
+                ).lower() == "true"
             )
-            submitted = st.form_submit_button(
-                "Collect & Preserve Evidence",
-                type="primary",
-                use_container_width=True,
+
+            available_platforms = (
+                ["Carousell", "Telegram"]
+                if browser_enabled
+                else ["Telegram"]
             )
-        st.caption(
-            "Evidence artifacts are stored locally. "
-            "Their SHA-256 hashes are registered on Ganache."
-        )
-        if submitted:
-            case_id = case_id.strip()
-            target = target.strip()
-            if not valid_case_id(case_id):
-                st.error(
-                    "Case ID must contain 1–50 letters, "
-                    "numbers, hyphens, or underscores."
+
+            if not browser_enabled:
+                st.info(
+                    "Automatic collection is available for public "
+                    "Telegram channels. For Carousell evidence, "
+                    "please use Manual Upload."
                 )
-            elif not target:
-                st.error("Please enter a target.")
-            elif not blockchain_ready():
-                st.error(
-                    "Blockchain unavailable. "
-                    "Start Ganache before collecting."
+
+            platform = st.selectbox(
+                "Evidence Source",
+                available_platforms,
+            )
+
+            with st.form("collection_form"):
+                case_id = st.text_input(
+                    "Case ID",
+                    placeholder="CASE-2026-001",
                 )
-            else:
-                try:
-                    if platform == "Carousell":
-                        target = normalize_carousell_url(target)
-                    else:
-                        target = normalize_telegram_target(target)
-                    with st.spinner(
-                        "Collecting and preserving evidence..."
-                    ):
+                target = st.text_input(
+                    "Target URL or Channel",
+                    placeholder=(
+                        "https://www.carousell.com.my/..."
+                        if platform == "Carousell"
+                        else "https://t.me/channelname"
+                    ),
+                )
+                submitted = st.form_submit_button(
+                    "Collect & Preserve Evidence",
+                    type="primary",
+                    use_container_width=True,
+                )
+            st.caption(
+                "Evidence artifacts are preserved in Supabase. "
+                "Their SHA-256 hashes are registered on Ethereum Sepolia."
+            )
+            if submitted:
+                case_id = case_id.strip()
+                target = target.strip()
+                if not valid_case_id(case_id):
+                    st.error(
+                        "Case ID must contain 1–50 letters, "
+                        "numbers, hyphens, or underscores."
+                    )
+                elif not target:
+                    st.error("Please enter a target.")
+                elif not blockchain_ready():
+                    st.error(
+                        "Blockchain unavailable. "
+                        "Check the Sepolia connection before collecting."
+                    )
+                else:
+                    try:
                         if platform == "Carousell":
-                            driver = setup_driver()
-                            try:
-                                evidence = extract_evidence(
-                                    driver,
+                            target = normalize_carousell_url(target)
+                        else:
+                            target = normalize_telegram_target(target)
+                        with st.spinner(
+                            "Collecting and preserving evidence..."
+                        ):
+                            if platform == "Carousell":
+                                driver = setup_driver()
+                                try:
+                                    evidence = extract_evidence(
+                                        driver,
+                                        target,
+                                        case_id,
+                                    )
+                                finally:
+                                    driver.quit()
+                            else:
+                                from telegram_scraper import (
+                                    extract_telegram_evidence,
+                                )
+                                evidence = extract_telegram_evidence(
                                     target,
                                     case_id,
                                 )
-                            finally:
-                                driver.quit()
+                            from evidence_preservation import (
+                                preserve_collected_evidence
+                            )
+
+                            results = preserve_collected_evidence(
+                                evidence, platform
+                            )
+
+                        if all(
+                            item["blockchain_status"] == "Registered"
+                            for item in results
+                        ):
+                            st.success(
+                                "All evidence preserved and registered!"
+                            )
                         else:
-                            from telegram_scraper import (
-                                extract_telegram_evidence,
+                            st.warning(
+                                "Evidence saved. Some blockchain "
+                                "registrations require confirmation."
                             )
-                            evidence = extract_telegram_evidence(
-                                target,
-                                case_id,
-                            )
-                        artifact_path = evidence["screenshot_path"]
-                        if not os.path.isfile(artifact_path):
-                            raise FileNotFoundError(
-                                "The collected artifact was not found."
-                            )
-                        file_hash = generate_file_hash(
-                            artifact_path
+
+                        st.write("**Case ID:**", case_id)
+
+                        for item in results:
+
+                            with st.expander(
+                                item["original_filename"]
+                            ):
+
+                                st.write("**SHA-256 Hash**")
+                                st.code(item["sha256"], language=None)
+
+                                st.write(
+                                    "**Storage:** Supabase Cloud"
+                                )
+
+                                st.write(
+                                    "**Blockchain Status:**",
+                                    item["blockchain_status"]
+                                )
+
+                                if item["transaction_hash"]:
+                                    st.write("**Transaction Hash**")
+                                    st.code(
+                                        item["transaction_hash"],
+                                        language=None
+                                    )
+
+                                file_bytes = read_evidence(
+                                    item["file_path"]
+                                )
+
+                                if item["original_filename"].endswith(".png"):
+                                    st.image(file_bytes)
+
+                                elif item["original_filename"].endswith(".txt"):
+                                    st.text(
+                                        file_bytes.decode(
+                                            "utf-8", errors="replace"
+                                        )
+                                    )
+
+                                st.download_button(
+                                    "Download Evidence",
+                                    data=file_bytes,
+                                    file_name=item["original_filename"],
+                                    mime="application/octet-stream",
+                                    key=f"collected_{item['id']}"
+                                )
+
+                    except Exception as exc:
+                        st.error(
+                            "Evidence collection or preservation failed."
                         )
-                        store_on_blockchain(
-                            file_hash,
-                            case_id,
-                        )
-                    st.success(
-                        "Evidence hash registered on the blockchain."
-                    )
-                    st.write("**Case ID**")
-                    st.write(case_id)
-                    st.write("**SHA-256 Hash**")
-                    st.code(file_hash, language=None)
-                    with st.expander("View Collected Artifact"):
-                        if platform == "Carousell":
-                            st.image(artifact_path)
-                        else:
-                            with open(
-                                artifact_path,
-                                "r",
-                                encoding="utf-8",
-                            ) as file:
-                                chat_log = file.read()
-                            st.text_area(
-                                "Telegram Chat Log",
-                                value=chat_log,
-                                height=280,
-                            )
-                    if platform == "Carousell":
-                        st.caption(
-                            "The screenshot hash was registered. "
-                            "The HTML source is also saved locally, "
-                            "but is not yet registered separately."
-                        )
-                except Exception as exc:
-                    st.error(
-                        "Evidence collection or preservation failed."
-                    )
-                    with st.expander("Technical details"):
-                        st.text(str(exc))
     # ==================================================
     # CASE MANAGEMENT
     # ==================================================
@@ -909,69 +914,80 @@ else:
     elif page == "Evidence Records":
         page_heading(
             "Evidence Records",
-            "Explore evidence hashes stored on the blockchain.",
+            "Explore and retrieve preserved digital evidence.",
         )
-        if not blockchain_ready():
-            st.warning(
-                "Ganache or the deployed contract is unavailable."
-            )
-        else:
-            records, error = load_records()
-            if error:
-                st.error(
-                    "Unable to retrieve blockchain records."
+
+        from cloud_evidence_viewer import show_cloud_evidence
+
+        cloud_tab, blockchain_tab = st.tabs(
+            ["Cloud Evidence", "Blockchain Records"]
+        )
+
+        with cloud_tab:
+            show_cloud_evidence()
+
+        with blockchain_tab:
+            if not blockchain_ready():
+                st.warning(
+                    "Sepolia or the deployed contract is unavailable."
                 )
-                with st.expander("Technical details"):
-                    st.text(error)
-            elif not records:
-                st.info("No evidence records found.")
             else:
-                st.metric(
-                    "Total Blockchain Records",
-                    len(records),
-                )
-                st.write("")
-                search = st.text_input(
-                    "Search by Case ID",
-                    placeholder="Search case...",
-                )
-                filtered = [
-                    record
-                    for record in reversed(records)
-                    if search.lower()
-                    in str(record.get("case_id", "")).lower()
-                ]
-                if not filtered:
-                    st.info("No matching evidence records.")
-                for record in filtered:
-                    show_record(record)
-                    # Generate a PDF using available blockchain metadata
-                    case_id = str(record.get("case_id", "Unknown"))
-                    evidence_hash = str(record.get("hash", ""))
-                    # The current blockchain records do not necessarily
-                    # contain the original URL, source or transaction hash.
-                    # Do not invent these forensic details.
-                    source = record.get("source") or "Not recorded"
-                    target_url = record.get("target_url") or "Not recorded"
-                    collection_time = record.get("timestamp") or "Not recorded"
-                    transaction_hash = record.get("transaction_hash")
-                    pdf_bytes = generate_evidence_report(
-                        case_id=case_id,
-                        source=source,
-                        target_url=target_url,
-                        evidence_hash=evidence_hash,
-                        collection_time=collection_time,
-                        verification_status="Not independently verified",
-                        transaction_hash=transaction_hash,
+                records, error = load_records()
+                if error:
+                    st.error(
+                        "Unable to retrieve blockchain records."
                     )
-                    st.download_button(
-                        label=f"Download PDF Report — {case_id}",
-                        data=pdf_bytes,
-                        file_name=f"forensic_report_{record.get('index', 'record')}.pdf",
-                        mime="application/pdf",
-                        key=f"pdf_report_{record.get('index', evidence_hash)}",
+                    with st.expander("Technical details"):
+                        st.text(error)
+                elif not records:
+                    st.info("No evidence records found.")
+                else:
+                    st.metric(
+                        "Total Blockchain Records",
+                        len(records),
                     )
                     st.write("")
+                    search = st.text_input(
+                        "Search by Case ID",
+                        placeholder="Search case...",
+                    )
+                    filtered = [
+                        record
+                        for record in reversed(records)
+                        if search.lower()
+                        in str(record.get("case_id", "")).lower()
+                    ]
+                    if not filtered:
+                        st.info("No matching evidence records.")
+                    for record in filtered:
+                        show_record(record)
+                        # Generate a PDF using available blockchain metadata
+                        case_id = str(record.get("case_id", "Unknown"))
+                        evidence_hash = str(record.get("hash", ""))
+                        # The current blockchain records do not necessarily
+                        # contain the original URL, source or transaction hash.
+                        # Do not invent these forensic details.
+                        source = record.get("source") or "Not recorded"
+                        target_url = record.get("target_url") or "Not recorded"
+                        collection_time = record.get("timestamp") or "Not recorded"
+                        transaction_hash = record.get("transaction_hash")
+                        pdf_bytes = generate_evidence_report(
+                            case_id=case_id,
+                            source=source,
+                            target_url=target_url,
+                            evidence_hash=evidence_hash,
+                            collection_time=collection_time,
+                            verification_status="Not independently verified",
+                            transaction_hash=transaction_hash,
+                        )
+                        st.download_button(
+                            label=f"Download PDF Report — {case_id}",
+                            data=pdf_bytes,
+                            file_name=f"forensic_report_{record.get('index', 'record')}.pdf",
+                            mime="application/pdf",
+                            key=f"pdf_report_{record.get('index', evidence_hash)}",
+                        )
+                        st.write("")
     # ==================================================
     # VERIFY EVIDENCE
     # ==================================================
@@ -1025,8 +1041,6 @@ else:
                         st.error(
                             "Verification could not be completed."
                         )
-                        with st.expander("Technical details"):
-                            st.text(str(exc))
         else:
             st.info(
                 "Upload an evidence file to begin verification."
