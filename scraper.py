@@ -61,11 +61,28 @@ def setup_driver():
 
 def extract_evidence(driver, target_url, case_id):
 
+    from carousell_collector import (
+        get_listing_identity,
+        validate_listing_identity,
+        generate_listing_evidence
+    )
+    from url_validator import valid_case_id
+
+    if not valid_case_id(case_id):
+        raise ValueError("Invalid case ID.")
+
+    get_listing_identity(target_url)
+
     os.makedirs(STORAGE_VAULT, exist_ok=True)
 
     driver.get(target_url)
 
     time.sleep(8)
+
+    validate_listing_identity(
+        target_url,
+        driver.current_url
+    )
 
     # Detect security verification and blocked pages
     page_title = driver.title.lower()
@@ -96,9 +113,11 @@ def extract_evidence(driver, target_url, case_id):
     except Exception:
         page_title = "Title extraction failed"
 
-    timestamp = datetime.now(
-        timezone.utc
-    ).strftime("%Y%m%d_%H%M%S")
+    captured_at = datetime.now(timezone.utc)
+
+    timestamp = captured_at.strftime(
+        "%Y%m%d_%H%M%S"
+    )
 
     capture_id = uuid.uuid4().hex[:12]
 
@@ -118,13 +137,25 @@ def extract_evidence(driver, target_url, case_id):
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(driver.page_source)
 
+    json_path, listing = generate_listing_evidence(
+        html_path,
+        case_id,
+        requested_url=target_url,
+        captured_at=captured_at.isoformat()
+    )
+
     return {
         "case_id": case_id,
         "target_url": target_url,
-        "title": page_title,
+        "title": listing["product_name"],
         "screenshot_path": screenshot_path,
         "html_path": html_path,
-        "extraction_date": timestamp
+        "artifact_paths": [
+            screenshot_path,
+            html_path,
+            str(json_path)
+        ],
+        "extraction_date": captured_at.isoformat()
     }
 
 
