@@ -23,7 +23,7 @@ def save_report(
             "Authenticated victim account is required."
         )
 
-    if platform not in ("Carousell", "Telegram"):
+    if platform not in ("Carousell", "Telegram", "IIUM Souq"):
         raise ValueError("Unsupported platform.")
 
     submitted_at = datetime.now(timezone.utc)

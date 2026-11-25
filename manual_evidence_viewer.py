@@ -5,7 +5,8 @@ from manual_evidence import preserve_manual_evidence
 from url_validator import (
     valid_case_id,
     normalize_carousell_url,
-    normalize_telegram_target
+    normalize_telegram_target,
+    normalize_souq_url
 )
 
 
@@ -18,17 +19,29 @@ def show_manual_upload():
         "automatic collection is unavailable."
     )
 
-    with st.form("manual_collection_form"):
+    platform = st.selectbox(
+        "Evidence Source",
+        ["Carousell", "Telegram", "IIUM Souq"],
+        key="manual_evidence_platform"
+    )
 
-        platform = st.selectbox(
-            "Evidence Source", ["Carousell", "Telegram"]
-        )
+    platform_placeholders = {
+        "Carousell": "https://www.carousell.com.my/...",
+        "Telegram": "https://t.me/channelname",
+        "IIUM Souq": "https://souq.iium.edu.my/...",
+    }
+
+    with st.form("manual_collection_form"):
 
         case_id = st.text_input(
             "Case ID", placeholder="CASE-2026-001"
         )
 
-        target = st.text_input("Original Source URL")
+        target = st.text_input(
+            "Original Source URL",
+            placeholder=platform_placeholders[platform],
+            key=f"manual_target_{platform}"
+        )
 
         uploaded_file = st.file_uploader(
             "Upload Evidence (Max 10 MB)",
@@ -74,6 +87,8 @@ def show_manual_upload():
         try:
             if platform == "Carousell":
                 target = normalize_carousell_url(target)
+            elif platform == "IIUM Souq":
+                target = normalize_souq_url(target)
             else:
                 target = normalize_telegram_target(target)
 

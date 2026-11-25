@@ -3,7 +3,10 @@ import hashlib
 from pathlib import Path
 import streamlit as st
 
-from url_validator import validate_carousell_url
+from url_validator import (
+    validate_carousell_url,
+    normalize_souq_url
+)
 from report_database import (
     save_report,
     save_report_evidence,
@@ -23,7 +26,7 @@ def render_victim_portal(user):
     st.title("🛡️ Victim Portal")
 
     st.caption(
-        "Report suspected Carousell or Telegram fraud "
+        "Report suspected Carousell, Telegram or IIUM Souq fraud "
         "and track your own reports."
     )
 
@@ -38,14 +41,24 @@ def render_victim_portal(user):
 
     with tab_submit:
 
+        platform = st.selectbox(
+            "Platform",
+            ["Carousell", "Telegram", "IIUM Souq"],
+            key="victim_report_platform"
+        )
+
+        platform_placeholders = {
+            "Carousell": "https://www.carousell.com.my/...",
+            "Telegram": "https://t.me/channelname",
+            "IIUM Souq": "https://souq.iium.edu.my/...",
+        }
+
         with st.form("fraud_report_form"):
 
-            platform = st.selectbox(
-                "Platform", ["Carousell", "Telegram"]
-            )
-
             scam_url = st.text_input(
-                "Scam Listing or Channel URL (optional)"
+                "Scam Listing or Channel URL (optional)",
+                placeholder=platform_placeholders[platform],
+                key=f"victim_url_{platform}"
             )
 
             description = st.text_area(
@@ -79,7 +92,22 @@ def render_victim_portal(user):
 
         if submitted:
 
-            if not description.strip():
+            url_error = None
+            scam_url = scam_url.strip()
+
+            if platform == "IIUM Souq" and scam_url:
+                try:
+                    scam_url = normalize_souq_url(scam_url)
+                except ValueError:
+                    url_error = (
+                        "Please enter a valid HTTPS "
+                        "IIUM Souq listing URL."
+                    )
+
+            if url_error:
+                st.error(url_error)
+
+            elif not description.strip():
                 st.error("Please describe the incident.")
 
             elif not consent:
@@ -178,6 +206,9 @@ def render_victim_portal(user):
                 st.write("**Submitted:**", report["submitted_at"])
                 st.write("**Status:**", report["status"])
                 st.write("**Description:**", report["description"])
+
+                if report.get("scam_url"):
+                    st.write("**Source URL:**", report["scam_url"])
 
                 for evidence in get_report_evidence(report["id"]):
 

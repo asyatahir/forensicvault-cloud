@@ -37,7 +37,7 @@ def show_cloud_evidence():
 
     platform = st.selectbox(
         "Filter by Platform",
-        ["All", "Carousell", "Telegram"],
+        ["All", "Carousell", "Telegram", "IIUM Souq"],
         key="cloud_platform_filter"
     )
 

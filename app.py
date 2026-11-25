@@ -286,7 +286,7 @@ if 'auth_user_id' not in st.session_state:
 current_user = get_user(st.session_state.auth_user_id) if st.session_state.auth_user_id else None
 if current_user is None:
     st.title('🛡️ ForensicVault')
-    st.caption('Secure local research prototype · Carousell & Telegram fraud reporting')
+    st.caption('Digital forensic research prototype · Carousell, Telegram & IIUM Souq')
     login_tab, register_tab = st.tabs(['Login', 'Register as Victim'])
     with login_tab:
         # Keep role selector outside the form so the identifier label updates immediately.
@@ -704,23 +704,40 @@ elif current_user['role'] == 'investigator':
                 ).lower() == "true"
             )
 
-            available_platforms = (
-                ["Carousell", "Telegram", "IIUM Souq"]
-                if browser_enabled
-                else ["Telegram","IIUM Souq"]
+            souq_enabled = (
+                os.getenv(
+                    "ENABLE_SOUQ_COLLECTION", "false"
+                ).lower() == "true"
             )
+
+            available_platforms = ["Telegram"]
+
+            if browser_enabled:
+                available_platforms.insert(0, "Carousell")
+
+            if souq_enabled:
+                available_platforms.append("IIUM Souq")
 
             if not browser_enabled:
                 st.info(
-                    "Automatic collection is available for public "
-                    "Telegram channels. For Carousell evidence, "
-                    "please use Manual Upload."
+                    "For Carousell evidence, please use Manual Upload."
+                )
+
+            if not souq_enabled:
+                st.caption(
+                    "IIUM Souq automatic collection is unavailable "
+                    "in this environment. Manual Upload remains available."
                 )
 
             platform = st.selectbox(
                 "Evidence Source",
                 available_platforms,
             )
+
+            if platform == "IIUM Souq":
+                st.info(
+                    "IIUM Souq requires authorized campus network access."
+                )
 
             with st.form("collection_form"):
                 case_id = st.text_input(
@@ -729,11 +746,11 @@ elif current_user['role'] == 'investigator':
                 )
                 target = st.text_input(
                     "Target URL or Channel",
-                    placeholder=(
-                        "https://www.carousell.com.my/..."
-                        if platform == "Carousell"
-                        else "https://t.me/channelname"
-                    ),
+                    placeholder={
+                        "Carousell": "https://www.carousell.com.my/...",
+                        "Telegram": "https://t.me/channelname",
+                        "IIUM Souq": "https://souq.iium.edu.my/...",
+                    }[platform],
                 )
                 submitted = st.form_submit_button(
                     "Collect & Preserve Evidence",
@@ -804,8 +821,16 @@ elif current_user['role'] == 'investigator':
                                     finally:
                                         driver.quit()
                                 elif platform == "IIUM Souq":
-                                        from souq_scraper import extract_souq_evidence
-                                        evidence = extract_souq_evidence(target, case_id)
+                                    if not souq_enabled:
+                                        st.error(
+                                            "IIUM Souq automatic collection is disabled."
+                                        )
+                                        st.stop()
+
+                                    from souq_scraper import extract_souq_evidence
+                                    evidence = extract_souq_evidence(
+                                        target, case_id
+                                    )
                                 else:
                                     import os
 

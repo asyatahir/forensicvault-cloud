@@ -21,9 +21,11 @@ def validate_carousell_url(url):
         hostname = (parsed.hostname or "").lower().rstrip(".")
 
         allowed_domains = (
-        "souq.iium.edu.my",
-        "www.souq.iium.edu.my",
-    )
+            "carousell.com.my",
+            "www.carousell.com.my",
+            "carousell.sg",
+            "www.carousell.sg",
+        )
 
         if hostname not in allowed_domains:
             return False
@@ -101,4 +103,36 @@ def normalize_telegram_target(value):
         raise ValueError(
             "Enter a valid public Telegram channel username."
         )
+    return value
+
+
+def normalize_souq_url(value):
+    value = value.strip()
+
+    if not value.startswith(("https://", "http://")):
+        value = "https://" + value
+
+    try:
+        parsed = urlsplit(value)
+
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname not in (
+                "souq.iium.edu.my",
+                "www.souq.iium.edu.my",
+            )
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port not in (None, 443)
+            or not parsed.path
+            or parsed.path == "/"
+            or parsed.fragment
+        ):
+            raise ValueError("Invalid IIUM Souq URL.")
+
+    except ValueError:
+        raise ValueError(
+            "Please enter a valid HTTPS IIUM Souq listing URL."
+        )
+
     return value
