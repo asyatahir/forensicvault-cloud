@@ -1,4 +1,5 @@
 import json
+import socket
 import hashlib
 import re
 import uuid
@@ -9,6 +10,40 @@ from bs4 import BeautifulSoup
 from url_validator import normalize_souq_url
 
 STORAGE_VAULT = Path("local_vault")
+
+
+def log_souq_error(code):
+    print(f"[SOUQ DIAGNOSTIC] Code={code}", flush=True)
+
+
+def is_dns_error(error):
+    pending = [error]
+    seen = set()
+
+    while pending:
+        current = pending.pop()
+
+        if id(current) in seen:
+            continue
+
+        seen.add(id(current))
+
+        if isinstance(current, socket.gaierror):
+            return True
+
+        if type(current).__name__ == "NameResolutionError":
+            return True
+
+        for item in (
+            getattr(current, "__cause__", None),
+            getattr(current, "__context__", None),
+            getattr(current, "reason", None),
+            *getattr(current, "args", ())
+        ):
+            if isinstance(item, BaseException):
+                pending.append(item)
+
+    return False
 
 
 def extract_souq_evidence(target_url, case_id):
@@ -33,18 +68,26 @@ def extract_souq_evidence(target_url, case_id):
             stream=True,
         ) as response:
 
+            print(
+                f"[SOUQ DIAGNOSTIC] HTTP={response.status_code}",
+                flush=True
+            )
+
             if 300 <= response.status_code < 400:
+                log_souq_error("HTTP_REDIRECT")
                 raise RuntimeError(
                     "IIUM Souq returned a redirect. "
                     "Use the direct approved listing URL."
                 )
 
             if response.status_code in (401, 403, 429):
+                log_souq_error("HTTP_ACCESS_RESTRICTED")
                 raise RuntimeError(
                     "IIUM Souq access is restricted or rate limited."
                 )
 
             if response.status_code != 200:
+                log_souq_error("HTTP_UNEXPECTED_STATUS")
                 raise RuntimeError(
                     f"IIUM Souq unavailable "
                     f"(HTTP {response.status_code})."
@@ -55,6 +98,7 @@ def extract_souq_evidence(target_url, case_id):
             ).lower()
 
             if "text/html" not in content_type:
+                log_souq_error("INVALID_CONTENT_TYPE")
                 raise RuntimeError(
                     "Expected an HTML webpage."
                 )
@@ -72,18 +116,26 @@ def extract_souq_evidence(target_url, case_id):
                 content.extend(chunk)
 
     except requests.exceptions.Timeout as error:
+        log_souq_error("NETWORK_TIMEOUT")
         raise RuntimeError(
             "IIUM Souq connection timed out. "
             "Check authorized campus network access."
         ) from error
 
     except requests.exceptions.ConnectionError as error:
+        if isinstance(error, requests.exceptions.SSLError):
+            log_souq_error("TLS_ERROR")
+        elif is_dns_error(error):
+            log_souq_error("DNS_FAILURE")
+        else:
+            log_souq_error("CONNECTION_FAILURE")
         raise RuntimeError(
             "Unable to connect to IIUM Souq. "
             "Check authorized campus network access."
         ) from error
 
     if not content:
+        log_souq_error("EMPTY_RESPONSE")
         raise RuntimeError("Empty webpage response.")
 
     html_content = bytes(content)
@@ -110,11 +162,13 @@ def extract_souq_evidence(target_url, case_id):
         indicator in page_title.lower()
         for indicator in blocked_titles
     ):
+        log_souq_error("ACCESS_OR_LOGIN_PAGE")
         raise RuntimeError(
             "Access restriction or login page detected."
         )
 
     if soup.select_one('input[type="password"]'):
+        log_souq_error("AUTHENTICATION_PAGE")
         raise RuntimeError(
             "Authentication page detected."
         )
@@ -125,6 +179,7 @@ def extract_souq_evidence(target_url, case_id):
     visible_text = soup.get_text("\n", strip=True)
 
     if not visible_text:
+        log_souq_error("NO_READABLE_CONTENT")
         raise RuntimeError(
             "No readable content found on the Souq page."
         )
