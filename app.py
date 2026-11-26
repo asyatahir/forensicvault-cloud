@@ -777,6 +777,7 @@ elif current_user['role'] == 'investigator':
                         "Check the Sepolia connection before collecting."
                     )
                 else:
+                    stage = "Target validation"
                     try:
                         if platform == "Carousell":
                             target = normalize_carousell_url(target)
@@ -789,6 +790,7 @@ elif current_user['role'] == 'investigator':
                             collection_lock,
                         )
 
+                        stage = "Collection access check"
                         if not allow_collection_attempt(
                             current_user["id"]
                         ):
@@ -798,6 +800,7 @@ elif current_user['role'] == 'investigator':
                             )
                             st.stop()
 
+                        stage = "Collection lock"
                         with collection_lock() as acquired:
 
                             if not acquired:
@@ -810,6 +813,7 @@ elif current_user['role'] == 'investigator':
                             with st.spinner(
                                 "Collecting and preserving evidence..."
                             ):
+                                stage = "Source evidence collection"
                                 if platform == "Carousell":
                                     driver = setup_driver()
                                     try:
@@ -853,6 +857,7 @@ elif current_user['role'] == 'investigator':
                                             target,
                                             case_id,
                                         )
+                                stage = "Evidence preservation"
                                 from evidence_preservation import (
                                     preserve_collected_evidence
                                 )
@@ -861,6 +866,7 @@ elif current_user['role'] == 'investigator':
                                     evidence, platform
                                 )
 
+                        stage = "Evidence results display"
                         if all(
                             item["blockchain_status"] == "Registered"
                             for item in results
@@ -925,7 +931,22 @@ elif current_user['role'] == 'investigator':
 
                     except Exception as exc:
                         st.error(
-                            "Evidence collection or preservation failed."
+                            f"Operation failed during: {stage}."
+                        )
+
+                        if platform == "IIUM Souq":
+                            if stage == "Source evidence collection":
+                                st.info(
+                                    "Check IIUM Souq availability "
+                                    "and authorized campus network access."
+                                )
+
+                        print(
+                            f"[COLLECTION ERROR] "
+                            f"Platform={platform} | "
+                            f"Stage={stage} | "
+                            f"ErrorType={type(exc).__name__}",
+                            flush=True
                         )
     # ==================================================
     # CASE MANAGEMENT
